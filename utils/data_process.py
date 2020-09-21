@@ -1,4 +1,9 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
 import os
+from typing import List
 from pytorch_transformers import BertTokenizer
 from tqdm import tqdm
 import pandas as pd
@@ -9,8 +14,11 @@ import collections
 from collections import Counter
 import sys
 
-def _is_chinese_char(cp):
-    """Checks whether CP is the codepoint of a CJK character."""
+
+def is_chinese_char(c) -> bool:
+    """
+    Checks whether C is the codepoint of a CJK character.
+    """
     # This defines a "chinese character" as anything in the CJK Unicode block:
     #   https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)
     #
@@ -19,71 +27,87 @@ def _is_chinese_char(cp):
     # as is Japanese Hiragana and Katakana. Those alphabets are used to write
     # space-separated words, so they are not treated specially and handled
     # like the all of the other languages.
-    if ((cp >= 0x4E00 and cp <= 0x9FFF) or  #
-        (cp >= 0x3400 and cp <= 0x4DBF) or  #
-        (cp >= 0x20000 and cp <= 0x2A6DF) or  #
-        (cp >= 0x2A700 and cp <= 0x2B73F) or  #
-        (cp >= 0x2B740 and cp <= 0x2B81F) or  #
-        (cp >= 0x2B820 and cp <= 0x2CEAF) or
-        (cp >= 0xF900 and cp <= 0xFAFF) or  #
-        (cp >= 0x2F800 and cp <= 0x2FA1F)):  #
-      return True
+    if ((c >= 0x4E00 and c <= 0x9FFF) or
+                (c >= 0x3400 and c <= 0x4DBF) or
+                (c >= 0x20000 and c <= 0x2A6DF) or
+            (c >= 0x2A700 and c <= 0x2B73F) or
+            (c >= 0x2B740 and c <= 0x2B81F) or
+                (c >= 0x2B820 and c <= 0x2CEAF) or
+                (c >= 0xF900 and c <= 0xFAFF) or
+            (c >= 0x2F800 and c <= 0x2FA1F)
+            ):
+        return True
 
     return False
 
+
+def get_char(sent: str) -> List[str]:
+    """
+    特殊的分词器:
+    - 中文按字切分
+    - 非中文组合在一起
+    """
+    tmp = []
+    s = ''
+    for char in sent.strip():
+        if char.strip():
+            cp = ord(char)
+            if is_chinese_char(cp):
+                if s:
+                    tmp.append(s)
+                tmp.append(char)
+                s = ''
+            else:
+                s += char
+        elif s:
+            tmp.append(s)
+            s = ''
+    if s:
+        tmp.append(s)
+    return tmp
+
+
 def bert4token(tokenizer, title, attribute, value):
+    """
+    用分词器
+    """
     title = tokenizer.tokenize(title)
     attribute = tokenizer.tokenize(attribute)
     value = tokenizer.tokenize(value)
-    tag = ['O']*len(title)
+    tag = ['O'] * len(title)
 
-    for i in range(0,len(title)-len(value)):
-        if title[i:i+len(value)] == value:
+    for i in range(0, len(title) - len(value)):
+        if title[i:i + len(value)] == value:
             for j in range(len(value)):
-                if j==0:
-                    tag[i+j] = 'B'
+                if j == 0:
+                    tag[i + j] = 'B'
                 else:
-                    tag[i+j] = 'I'
+                    tag[i + j] = 'I'
+
     title_id = tokenizer.convert_tokens_to_ids(title)
     attribute_id = tokenizer.convert_tokens_to_ids(attribute)
     value_id = tokenizer.convert_tokens_to_ids(value)
     tag_id = [TAGS[_] for _ in tag]
     return title_id, attribute_id, value_id, tag_id
 
-def nobert4token(tokenizer, title, attribute, value):
 
-    def get_char(sent):
-        tmp = []
-        s = ''
-        for char in sent.strip():
-            if char.strip():
-                cp = ord(char)
-                if _is_chinese_char(cp):
-                    if s:
-                        tmp.append(s)
-                    tmp.append(char)
-                    s = ''
-                else:
-                    s += char
-            elif s:
-                tmp.append(s)
-                s = ''
-        if s:
-            tmp.append(s)
-        return tmp
+def nobert4token(tokenizer, title, attribute, value):
+    """
+    中文按字切分、非中文组合在一起
+    """
 
     title_list = get_char(title)
     attribute_list = get_char(attribute)
     value_list = get_char(value)
+    tag_list = ['O'] * len(title_list)
 
-    tag_list = ['O']*len(title_list)
-    for i in range(0,len(title_list)-len(value_list)):
-        if title_list[i:i+len(value_list)] == value_list:
+    for i in range(0, len(title_list) - len(value_list)):
+        if title_list[i:i + len(value_list)] == value_list:
             for j in range(len(value_list)):
-                if j==0:
-                    tag_list[i+j] = 'B'
+                if j == 0:
+                    tag_list[i + j] = 'B'
                 else:
-                    tag_list[i+j] = 'I'
+                    tag_list[i + j] = 'I'
 
     title_list = tokenizer.convert_tokens_to_ids(title_list)
     attribute_list = tokenizer.convert_tokens_to_ids(attribute_list)
@@ -93,21 +117,25 @@ def nobert4token(tokenizer, title, attribute, value):
     return title_list, attribute_list, value_list, tag_list
 
 
-max_len = 40
-def X_padding(ids):
-    if len(ids) >= max_len:  
+def X_padding(ids: List[int], max_len: int = 40) -> List[int]:
+    """
+    如果过长，截断；
+    如果太短，填充
+    """
+    if len(ids) >= max_len:
         return ids[:max_len]
-    ids.extend([0]*(max_len-len(ids))) 
+    ids.extend([0] * (max_len - len(ids)))
     return ids
 
-tag_max_len = 6
-def tag_padding(ids):
-    if len(ids) >= tag_max_len: 
+
+def tag_padding(ids, tag_max_len: int = 6):
+    if len(ids) >= tag_max_len:
         return ids[:tag_max_len]
-    ids.extend([0]*(tag_max_len-len(ids))) 
+    ids.extend([0] * (tag_max_len - len(ids)))
     return ids
 
-def rawdata2pkl4nobert(path):
+
+def rawdata2pkl4nobert(path, debug=False):
     tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
     titles = []
     attributes = []
@@ -118,7 +146,7 @@ def rawdata2pkl4nobert(path):
             line = line.strip('\n')
             if line:
                 title, attribute, value = line.split('<$$$>')
-                if attribute in ['适用季节','品牌'] and value in title and _is_chinese_char(ord(value[0])):
+                if attribute in ['适用季节', '品牌'] and value in title and is_chinese_char(ord(value[0])):
                     title, attribute, value, tag = nobert4token(tokenizer, title, attribute, value)
                     titles.append(title)
                     attributes.append(attribute)
@@ -129,12 +157,12 @@ def rawdata2pkl4nobert(path):
     print([tokenizer.convert_ids_to_tokens(i) for i in attributes[:3]])
     print([tokenizer.convert_ids_to_tokens(i) for i in values[:3]])
 
-    df = pd.DataFrame({'titles': titles, 'attributes': attributes, 'values': values, 'tags': tags},
-                      index=range(len(titles)))
+    df = pd.DataFrame({'titles': titles, 'attributes': attributes, 'values': values, 'tags': tags}, index=range(len(titles)))
     print(df.shape)
     df['x'] = df['titles'].apply(X_padding)
     df['y'] = df['tags'].apply(X_padding)
     df['att'] = df['attributes'].apply(tag_padding)
+    df.to_csv("../data/中文品牌_试用季节.csv", index=False, sep="\001")
 
     index = list(range(len(titles)))
     random.shuffle(index)
@@ -159,7 +187,14 @@ def rawdata2pkl4nobert(path):
     test_value = np.asarray(list(test['values'].values))
     test_y = np.asarray(list(test['y'].values))
 
-    with open('../data/中文_适用季节.pkl', 'wb') as outp:
+    tgt_file = "../data/中文品牌_适用季节.pkl"
+    if debug:                   # 小数据集
+        train_x, train_att, train_y = train_x[:1000], train_att[:1000], train_y[:1000]
+        valid_x, valid_att, valid_y = valid_x[:100], valid_att[:100], valid_y[:100]
+        test_x, test_att, test_y = test_x[:100], test_att[:100], test_y[:100]
+        tgt_file = tgt_file.replace(".pkl", "_small.pkl")
+
+    with open(tgt_file, 'wb') as outp:
         pickle.dump(train_x, outp)
         pickle.dump(train_att, outp)
         pickle.dump(train_y, outp)
@@ -172,13 +207,12 @@ def rawdata2pkl4nobert(path):
         pickle.dump(test_y, outp)
 
 
-
 def rawdata2pkl4bert(path, att_list):
     tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
     with open(path, 'r') as f:
         lines = f.readlines()
         for att_name in tqdm(att_list):
-            print('#'*20+att_name+'#'*20)
+            print('#' * 20 + att_name + '#' * 20)
             titles = []
             attributes = []
             values = []
@@ -187,7 +221,7 @@ def rawdata2pkl4bert(path, att_list):
                 line = line.strip('\n')
                 if line:
                     title, attribute, value = line.split('<$$$>')
-                    if attribute in [att_name] and value in title: #and _is_chinese_char(ord(value[0])):
+                    if attribute in [att_name] and value in title:  # and is_chinese_char(ord(value[0])):
                         title, attribute, value, tag = bert4token(tokenizer, title, attribute, value)
                         titles.append(title)
                         attributes.append(attribute)
@@ -198,7 +232,7 @@ def rawdata2pkl4bert(path, att_list):
                 print([[id2tags[j] for j in i] for i in tags[:3]])
                 print([tokenizer.convert_ids_to_tokens(i) for i in attributes[:3]])
                 print([tokenizer.convert_ids_to_tokens(i) for i in values[:3]])
-                df = pd.DataFrame({'titles':titles,'attributes':attributes,'values':values,'tags':tags}, index=range(len(titles)))
+                df = pd.DataFrame({'titles': titles, 'attributes': attributes, 'values': values, 'tags': tags}, index=range(len(titles)))
                 print(df.shape)
                 df['x'] = df['titles'].apply(X_padding)
                 df['y'] = df['tags'].apply(X_padding)
@@ -206,13 +240,13 @@ def rawdata2pkl4bert(path, att_list):
 
                 index = list(range(len(titles)))
                 random.shuffle(index)
-                train_index = index[:int(0.85*len(index))]
-                valid_index = index[int(0.85*len(index)):int(0.95*len(index))]
-                test_index = index[int(0.95*len(index)):]
+                train_index = index[:int(0.85 * len(index))]
+                valid_index = index[int(0.85 * len(index)):int(0.95 * len(index))]
+                test_index = index[int(0.95 * len(index)):]
 
-                train = df.loc[train_index,:]
-                valid = df.loc[valid_index,:]
-                test = df.loc[test_index,:]
+                train = df.loc[train_index, :]
+                valid = df.loc[valid_index, :]
+                test = df.loc[test_index, :]
 
                 train_x = np.asarray(list(train['x'].values))
                 train_att = np.asarray(list(train['att'].values))
@@ -227,9 +261,9 @@ def rawdata2pkl4bert(path, att_list):
                 test_value = np.asarray(list(test['values'].values))
                 test_y = np.asarray(list(test['y'].values))
 
-                att_name = att_name.replace('/','_')
+                att_name = att_name.replace('/', '_')
                 with open('../data/all/{}.pkl'.format(att_name), 'wb') as outp:
-                # with open('../data/top105_att.pkl', 'wb') as outp:
+                    # with open('../data/top105_att.pkl', 'wb') as outp:
                     pickle.dump(train_x, outp)
                     pickle.dump(train_att, outp)
                     pickle.dump(train_y, outp)
@@ -241,7 +275,11 @@ def rawdata2pkl4bert(path, att_list):
                     pickle.dump(test_value, outp)
                     pickle.dump(test_y, outp)
 
-def get_attributes(path):
+
+def get_attributes(path: str) -> List[str]:
+    """
+    获取所有的属性列表: 去重、按出现频率降序排序
+    """
     atts = []
     with open(path, 'r') as f:
         for line in f.readlines():
@@ -252,10 +290,12 @@ def get_attributes(path):
     return [item[0] for item in Counter(atts).most_common()]
 
 
-if __name__=='__main__':
-    TAGS = {'':0,'B':1,'I':2,'O':3}
-    id2tags = {v:k for k,v in TAGS.items()}
+if __name__ == '__main__':
+    TAGS = {'': 0, 'B': 1, 'I': 2, 'O': 3}
+    id2tags = {v: k for k, v in TAGS.items()}
     path = '../data/raw.txt'
     att_list = get_attributes(path)
     # rawdata2pkl4bert(path, att_list)
-    rawdata2pkl4nobert(path)
+
+    # rawdata2pkl4nobert(path)
+    rawdata2pkl4nobert(path, debug=True)

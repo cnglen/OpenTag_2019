@@ -1,8 +1,13 @@
-from .basic_module import BasicModule
-from pytorch_transformers import BertModel
-import torch
-from torchcrf import CRF
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
 from .squeeze_embedding import SqueezeEmbedding
+from torchcrf import CRF
+import torch
+from pytorch_transformers import BertModel
+from .basic_module import BasicModule
+
 
 class OpenTag2019(BasicModule):
     def __init__(self, opt, *args, **kwargs):
@@ -21,10 +26,10 @@ class OpenTag2019(BasicModule):
 
         self.squeeze_embedding = SqueezeEmbedding()
 
-        #CRF
+        # CRF
         self.lstm = torch.nn.LSTM(self.embedding_dim, self.hidden_dim // 2, num_layers=1, bidirectional=True, batch_first=True)
 
-        self.hidden2tag = torch.nn.Linear(self.hidden_dim*2, self.tagset_size)
+        self.hidden2tag = torch.nn.Linear(self.hidden_dim * 2, self.tagset_size)
         self.crf = CRF(self.tagset_size, batch_first=True)
 
     def calculate_cosin(self, context_output, att_hidden):
@@ -32,15 +37,15 @@ class OpenTag2019(BasicModule):
         context_output (batchsize, seqlen, hidden_dim)
         att_hidden (batchsize, hidden_dim)
         '''
-        batchsize,seqlen,hidden_dim = context_output.size()
-        att_hidden = att_hidden.unsqueeze(1).repeat(1,seqlen,1)
+        batchsize, seqlen, hidden_dim = context_output.size()
+        att_hidden = att_hidden.unsqueeze(1).repeat(1, seqlen, 1)
 
         context_output = context_output.float()
         att_hidden = att_hidden.float()
 
-        cos = torch.sum(context_output*att_hidden, dim=-1)/(torch.norm(context_output, dim=-1)*torch.norm(att_hidden, dim=-1))
+        cos = torch.sum(context_output * att_hidden, dim=-1) / (torch.norm(context_output, dim=-1) * torch.norm(att_hidden, dim=-1))
         cos = cos.unsqueeze(-1)
-        cos_output = context_output*cos
+        cos_output = context_output * cos
         outputs = torch.cat([context_output, cos_output], dim=-1)
 
         return outputs
@@ -59,18 +64,16 @@ class OpenTag2019(BasicModule):
         att, _ = self.bert(att)
         # att = self.word_embeds(att)
         _, att_hidden = self.lstm(att)
-        att_hidden = torch.cat([att_hidden[0][-2],att_hidden[0][-1]], dim=-1)
+        att_hidden = torch.cat([att_hidden[0][-2], att_hidden[0][-1]], dim=-1)
 
         outputs = self.calculate_cosin(context_output, att_hidden)
         outputs = self.dropout(outputs)
 
         outputs = self.hidden2tag(outputs)
-        #CRF
+        # CRF
         # outputs = outputs.transpose(0,1).contiguous()
         outputs = self.crf.decode(outputs)
         return outputs
-
-
 
     def log_likelihood(self, inputs):
         context, att, target = inputs[0], inputs[1], inputs[2]
@@ -90,13 +93,13 @@ class OpenTag2019(BasicModule):
         att, _ = self.bert(att)
         # att = self.word_embeds(att)
         _, att_hidden = self.lstm(att)
-        att_hidden = torch.cat([att_hidden[0][-2],att_hidden[0][-1]], dim=-1)
+        att_hidden = torch.cat([att_hidden[0][-2], att_hidden[0][-1]], dim=-1)
 
         outputs = self.calculate_cosin(context_output, att_hidden)
         outputs = self.dropout(outputs)
 
         outputs = self.hidden2tag(outputs)
-        #CRF
+        # CRF
         # outputs = outputs.transpose(0,1).contiguous()
 
         return - self.crf(outputs, target)

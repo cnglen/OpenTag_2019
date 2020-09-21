@@ -1,10 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
 import pickle
 import torch
-from torch.utils.data import Dataset,DataLoader
+from torch.utils.data import Dataset, DataLoader
+
 
 class MyDataset(Dataset):
     def __init__(self, X, Y, att):
-        self.data = [{'x':X[i],'y':Y[i],'att':att[i]} for i in range(X.shape[0])]
+        self.data = [{'x': X[i], 'y':Y[i], 'att':att[i]} for i in range(X.shape[0])]
 
     def __getitem__(self, index):
         return self.data[index]
@@ -25,8 +30,8 @@ def get_dataloader(opt):
         test_att = pickle.load(inp)
         test_value = pickle.load(inp)
         test_y = pickle.load(inp)
-    print("train len:",train_x.shape)
-    print("test len:",test_x.shape)
+    print("train len:", train_x.shape)
+    print("test len:", test_x.shape)
     print("valid len", valid_x.shape)
 
     train_dataset = MyDataset(train_x, train_y, train_att)
@@ -37,7 +42,7 @@ def get_dataloader(opt):
         train_dataloader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers)
         valid_dataloader = DataLoader(valid_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers)
         test_dataloader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers)
-        return train_dataloader,valid_dataloader,test_dataloader
+        return train_dataloader, valid_dataloader, test_dataloader
     except:
         pass
     return None
