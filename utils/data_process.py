@@ -28,13 +28,13 @@ def is_chinese_char(c) -> bool:
     # space-separated words, so they are not treated specially and handled
     # like the all of the other languages.
     if ((c >= 0x4E00 and c <= 0x9FFF) or
-                (c >= 0x3400 and c <= 0x4DBF) or
-                (c >= 0x20000 and c <= 0x2A6DF) or
-            (c >= 0x2A700 and c <= 0x2B73F) or
-            (c >= 0x2B740 and c <= 0x2B81F) or
-                (c >= 0x2B820 and c <= 0x2CEAF) or
-                (c >= 0xF900 and c <= 0xFAFF) or
-            (c >= 0x2F800 and c <= 0x2FA1F)
+            (c >= 0x3400 and c <= 0x4DBF) or
+            (c >= 0x20000 and c <= 0x2A6DF) or
+                (c >= 0x2A700 and c <= 0x2B73F) or
+                (c >= 0x2B740 and c <= 0x2B81F) or
+            (c >= 0x2B820 and c <= 0x2CEAF) or
+            (c >= 0xF900 and c <= 0xFAFF) or
+                (c >= 0x2F800 and c <= 0x2FA1F)
             ):
         return True
 
@@ -136,6 +136,13 @@ def tag_padding(ids, tag_max_len: int = 6):
 
 
 def rawdata2pkl4nobert(path, debug=False):
+    """
+    限定了属性, OpenTag的方法，需要一个属性做一个模型。如果将多个属性融合在一起，太多的NER不知道有什么问题?
+    """
+
+    limited_attrs = ['适用季节', '品牌']
+    limited_attrs = ['适用季节']
+
     tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
     titles = []
     attributes = []
@@ -146,7 +153,7 @@ def rawdata2pkl4nobert(path, debug=False):
             line = line.strip('\n')
             if line:
                 title, attribute, value = line.split('<$$$>')
-                if attribute in ['适用季节', '品牌'] and value in title and is_chinese_char(ord(value[0])):
+                if attribute in limited_attrs and value in title and is_chinese_char(ord(value[0])):
                     title, attribute, value, tag = nobert4token(tokenizer, title, attribute, value)
                     titles.append(title)
                     attributes.append(attribute)
@@ -162,7 +169,7 @@ def rawdata2pkl4nobert(path, debug=False):
     df['x'] = df['titles'].apply(X_padding)
     df['y'] = df['tags'].apply(X_padding)
     df['att'] = df['attributes'].apply(tag_padding)
-    df.to_csv("../data/中文品牌_试用季节.csv", index=False, sep="\001")
+    df.to_csv(f"../data/{'_'.join(limited_attrs)}.csv", index=False, sep="\001")
 
     index = list(range(len(titles)))
     random.shuffle(index)
@@ -187,7 +194,7 @@ def rawdata2pkl4nobert(path, debug=False):
     test_value = np.asarray(list(test['values'].values))
     test_y = np.asarray(list(test['y'].values))
 
-    tgt_file = "../data/中文品牌_适用季节.pkl"
+    tgt_file = f"../data/{'_'.join(limited_attrs)}.pkl"
     if debug:                   # 小数据集
         train_x, train_att, train_y = train_x[:1000], train_att[:1000], train_y[:1000]
         valid_x, valid_att, valid_y = valid_x[:100], valid_att[:100], valid_y[:100]
